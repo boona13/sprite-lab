@@ -23,6 +23,7 @@
         <nav class="tabs" role="tablist">
           <button type="button" class="tab active" data-tab="remove" role="tab" aria-selected="true">Remove background</button>
           <button type="button" class="tab" data-tab="slice" role="tab" aria-selected="false">Slice spritesheet</button>
+          <button type="button" class="tab" data-tab="generate" role="tab" aria-selected="false">Generate sprites</button>
         </nav>
       </header>
 
@@ -69,6 +70,96 @@
       </main>
 
       <!-- ── Spritesheet Slicer ── -->
+      <!-- Sprite Generator -->
+      <main class="panel generate-panel hidden" id="panel-generate">
+        <aside class="sidebar">
+          <section class="settings-card">
+            <div class="settings-title">
+              <strong>Generate sprite art</strong>
+              <span>OpenRouter</span>
+            </div>
+
+            <label class="select-field">
+              Preset
+              <select id="generate-preset"></select>
+            </label>
+
+            <label class="select-field">
+              Prompt
+              <textarea id="generate-prompt" maxlength="1200" rows="7" placeholder="Describe the sprite, character, item, tileset, colors, camera angle, frame count..."></textarea>
+            </label>
+
+            <label class="select-field">
+              Avoid
+              <textarea id="generate-negative" maxlength="500" rows="3" placeholder="text, watermark, blurry shapes, merged frames..."></textarea>
+            </label>
+
+            <label class="select-field">
+              Model
+              <select id="generate-model"></select>
+            </label>
+
+            <div class="grid-inputs two-col">
+              <label>Aspect <select id="generate-aspect"></select></label>
+              <label>Size <select id="generate-size"></select></label>
+            </div>
+
+            <p class="progress-line hidden" id="generate-progress" aria-live="polite"></p>
+            <button type="button" class="btn-primary" id="generate-run">Generate sprite</button>
+
+            <section class="preset-editor">
+              <div class="settings-title">
+                <strong>Preset prompt</strong>
+                <span>Local</span>
+              </div>
+              <label class="select-field">
+                Name
+                <input type="text" id="preset-edit-label" maxlength="60" />
+              </label>
+              <label class="select-field">
+                Prompt
+                <textarea id="preset-edit-prompt" maxlength="1200" rows="6"></textarea>
+              </label>
+              <div class="grid-inputs two-col">
+                <label>Aspect <select id="preset-edit-aspect"></select></label>
+                <label>Size <select id="preset-edit-size"></select></label>
+              </div>
+              <div class="preset-editor-actions">
+                <button type="button" class="btn-secondary" id="preset-save">Save preset</button>
+                <button type="button" class="btn-ghost" id="preset-new">New preset</button>
+              </div>
+              <button type="button" class="btn-ghost" id="preset-delete">Delete local preset</button>
+            </section>
+          </section>
+        </aside>
+
+        <section class="generate-workspace">
+          <div class="generated-preview-wrap">
+            <div class="preview-tag">Generated</div>
+            <div class="checker generated-preview">
+              <img id="generate-img" alt="" hidden />
+              <div class="preview-empty" id="generate-empty">Generated sprite preview</div>
+            </div>
+          </div>
+
+          <div class="generated-actions" id="generate-actions" hidden>
+            <button type="button" class="btn-secondary" id="generate-use-remove">Send to background remover</button>
+            <button type="button" class="btn-secondary" id="generate-use-slice">Send to slicer</button>
+            <button type="button" class="btn-secondary" id="generate-download">Download PNG</button>
+            <button type="button" class="btn-ghost" id="generate-clear">Clear open image</button>
+          </div>
+        </section>
+
+        <aside class="history-sidebar">
+          <div class="settings-title">
+            <strong>History</strong>
+            <span id="generate-history-count">0</span>
+          </div>
+          <div class="generated-history" id="generate-history"></div>
+          <button type="button" class="btn-ghost" id="generate-clear-history">Clear history</button>
+        </aside>
+      </main>
+
       <main class="panel slice-panel hidden" id="panel-slice">
         <aside class="sidebar">
           <div class="dropzone" id="slice-dropzone" tabindex="0" role="button">
@@ -149,7 +240,7 @@
             </div>
             <div class="anim-preview checker" id="anim-preview"></div>
             <div class="frame-grid" id="frame-grid"></div>
-            <p class="field-hint">Click a frame to exclude it from export.</p>
+            <p class="field-hint">Drag frames to reorder. Click a frame to exclude it, or use Copy to duplicate.</p>
           </div>
         </section>
       </main>

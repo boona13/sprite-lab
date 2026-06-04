@@ -7,7 +7,9 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite",
+    "dev:api": "go run ./cmd/sprite-lab-server",
     "build": "vite build",
+    "build:api": "go build -o bin/sprite-lab-server ./cmd/sprite-lab-server",
     "preview": "vite preview",
     "test:pipeline": "tsx scripts/test-pipeline.ts",
     "test:checkerboard": "tsx scripts/test-checkerboard.ts",

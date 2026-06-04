@@ -8,6 +8,12 @@ import {
 import { downloadFramesZip } from './spriteUtils';
 import { removeBackgroundSmart } from './backgroundDetect';
 import {
+  fetchGenerateMetadata,
+  fetchSpritePresets,
+  generateSprite,
+  type SpritePreset,
+} from './generateSprites';
+import {
   runSpritesheetPipelineBrowser,
   formatFrameDetection,
   normalizeBrowserFrames,
@@ -15,12 +21,13 @@ import {
 } from './pipelineBrowser';
 import type { NormalizeAlign, NormalizeMode } from './core/types';
 
-type Tab = 'remove' | 'slice';
+type Tab = 'remove' | 'slice' | 'generate';
 
 // ── Tabs ──
 const tabs = document.querySelectorAll<HTMLButtonElement>('.tab');
 const panelRemove = document.getElementById('panel-remove')!;
 const panelSlice = document.getElementById('panel-slice')!;
+const panelGenerate = document.getElementById('panel-generate')!;
 
 tabs.forEach((tab) => {
   tab.addEventListener('click', () => {
@@ -31,6 +38,7 @@ tabs.forEach((tab) => {
     });
     panelRemove.classList.toggle('hidden', id !== 'remove');
     panelSlice.classList.toggle('hidden', id !== 'slice');
+    panelGenerate.classList.toggle('hidden', id !== 'generate');
   });
 });
 
@@ -83,9 +91,253 @@ function setProgress(el: HTMLElement, message: string, show: boolean) {
   el.classList.toggle('hidden', !show);
 }
 
-async function loadRemoveFile(file: File) {
-  removeFileName = file.name.replace(/\.[^.]+$/, '') + '.png';
-  removeSourceUrl = await fileToDataUrl(file);
+// GENERATE SPRITES
+const generatePreset = document.getElementById('generate-preset') as HTMLSelectElement;
+const generatePrompt = document.getElementById('generate-prompt') as HTMLTextAreaElement;
+const generateNegative = document.getElementById('generate-negative') as HTMLTextAreaElement;
+const generateModel = document.getElementById('generate-model') as HTMLSelectElement;
+const generateAspect = document.getElementById('generate-aspect') as HTMLSelectElement;
+const generateSize = document.getElementById('generate-size') as HTMLSelectElement;
+const generateRun = document.getElementById('generate-run') as HTMLButtonElement;
+const generateProgress = document.getElementById('generate-progress')!;
+const generateImg = document.getElementById('generate-img') as HTMLImageElement;
+const generateEmpty = document.getElementById('generate-empty')!;
+const generateActions = document.getElementById('generate-actions')!;
+const generateUseRemove = document.getElementById('generate-use-remove') as HTMLButtonElement;
+const generateUseSlice = document.getElementById('generate-use-slice') as HTMLButtonElement;
+const generateDownload = document.getElementById('generate-download') as HTMLButtonElement;
+const generateClear = document.getElementById('generate-clear') as HTMLButtonElement;
+const generateHistory = document.getElementById('generate-history')!;
+const generateHistoryCount = document.getElementById('generate-history-count')!;
+const generateClearHistory = document.getElementById('generate-clear-history') as HTMLButtonElement;
+const presetEditLabel = document.getElementById('preset-edit-label') as HTMLInputElement;
+const presetEditPrompt = document.getElementById('preset-edit-prompt') as HTMLTextAreaElement;
+const presetEditAspect = document.getElementById('preset-edit-aspect') as HTMLSelectElement;
+const presetEditSize = document.getElementById('preset-edit-size') as HTMLSelectElement;
+const presetSave = document.getElementById('preset-save') as HTMLButtonElement;
+const presetNew = document.getElementById('preset-new') as HTMLButtonElement;
+const presetDelete = document.getElementById('preset-delete') as HTMLButtonElement;
+
+let spritePresets: SpritePreset[] = [];
+let generatedSpriteUrl: string | null = null;
+let generatedSpriteName = 'generated-sprite.png';
+const localPresetKey = 'sprite-lab.local-presets.v1';
+let generatedHistoryItems: { id: string; imageUrl: string; name: string; prompt: string; model: string }[] = [];
+
+function fillSelect(select: HTMLSelectElement, values: string[]) {
+  select.innerHTML = '';
+  values.forEach((value) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  });
+}
+
+function loadLocalPresets(): SpritePreset[] {
+  try {
+    const raw = localStorage.getItem(localPresetKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as SpritePreset[];
+    return parsed.filter((preset) => preset.id && preset.label && preset.prompt);
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalPresets() {
+  const localPresets = spritePresets.filter((preset) => preset.id.startsWith('local-'));
+  localStorage.setItem(localPresetKey, JSON.stringify(localPresets));
+}
+
+function renderPresetSelect(selectedId = generatePreset.value) {
+  generatePreset.innerHTML = '';
+  spritePresets.forEach((preset) => {
+    const option = document.createElement('option');
+    option.value = preset.id;
+    option.textContent = preset.id.startsWith('local-') ? `${preset.label} (local)` : preset.label;
+    generatePreset.appendChild(option);
+  });
+  if (spritePresets.some((preset) => preset.id === selectedId)) {
+    generatePreset.value = selectedId;
+  }
+}
+
+async function initGenerator() {
+  try {
+    const [presets, metadata] = await Promise.all([fetchSpritePresets(), fetchGenerateMetadata()]);
+    spritePresets = [...presets, ...loadLocalPresets()];
+    renderPresetSelect(spritePresets[0]?.id);
+    fillSelect(generateModel, metadata.models);
+    fillSelect(generateAspect, metadata.aspectRatios);
+    fillSelect(generateSize, metadata.imageSizes);
+    fillSelect(presetEditAspect, metadata.aspectRatios);
+    fillSelect(presetEditSize, metadata.imageSizes);
+    applyPresetDefaults(true);
+  } catch (err) {
+    setProgress(
+      generateProgress,
+      err instanceof Error ? err.message : 'Sprite generator backend is unavailable',
+      true,
+    );
+    generateRun.disabled = true;
+  }
+}
+
+function applyPresetDefaults(replacePrompt = true) {
+  const preset = spritePresets.find((item) => item.id === generatePreset.value);
+  if (!preset) return;
+  generateAspect.value = preset.aspectRatio;
+  generateSize.value = preset.imageSize;
+  presetEditLabel.value = preset.label;
+  presetEditPrompt.value = preset.prompt;
+  presetEditAspect.value = preset.aspectRatio;
+  presetEditSize.value = preset.imageSize;
+  presetDelete.disabled = !preset.id.startsWith('local-');
+  if (replacePrompt) generatePrompt.value = preset.prompt;
+}
+
+function saveCurrentPreset() {
+  const label = presetEditLabel.value.trim();
+  const prompt = presetEditPrompt.value.trim();
+  if (!label || !prompt) {
+    alert('Preset name and prompt are required.');
+    return;
+  }
+
+  const current = spritePresets.find((preset) => preset.id === generatePreset.value);
+  const isLocal = current?.id.startsWith('local-');
+  const id = isLocal ? current.id : `local-${Date.now()}`;
+  const next: SpritePreset = {
+    id,
+    label,
+    description: label,
+    prompt,
+    aspectRatio: presetEditAspect.value,
+    imageSize: presetEditSize.value,
+  };
+
+  const existing = spritePresets.findIndex((preset) => preset.id === id);
+  if (existing >= 0) spritePresets[existing] = next;
+  else spritePresets.push(next);
+
+  saveLocalPresets();
+  renderPresetSelect(id);
+  applyPresetDefaults(true);
+}
+
+function createBlankPreset() {
+  const id = `local-${Date.now()}`;
+  const next: SpritePreset = {
+    id,
+    label: 'New preset',
+    description: 'New preset',
+    prompt: 'Create a clean 2D game sprite. Pixel art, clear silhouette, consistent scale, no text, no watermark.',
+    aspectRatio: generateAspect.value || '1:1',
+    imageSize: generateSize.value || '1K',
+  };
+  spritePresets.push(next);
+  saveLocalPresets();
+  renderPresetSelect(id);
+  applyPresetDefaults(true);
+}
+
+function deleteCurrentPreset() {
+  const current = spritePresets.find((preset) => preset.id === generatePreset.value);
+  if (!current?.id.startsWith('local-')) return;
+  spritePresets = spritePresets.filter((preset) => preset.id !== current.id);
+  saveLocalPresets();
+  renderPresetSelect(spritePresets[0]?.id);
+  applyPresetDefaults(true);
+}
+
+function setGeneratedImage(imageUrl: string, name: string) {
+  generatedSpriteUrl = imageUrl;
+  generatedSpriteName = name;
+  generateImg.src = imageUrl;
+  generateImg.hidden = false;
+  generateEmpty.classList.add('gone');
+  generateActions.hidden = false;
+}
+
+function clearGeneratedImage() {
+  generatedSpriteUrl = null;
+  generateImg.removeAttribute('src');
+  generateImg.hidden = true;
+  generateEmpty.classList.remove('gone');
+  generateActions.hidden = true;
+}
+
+function addGeneratedHistory(imageUrl: string, name: string, prompt: string, model: string) {
+  generatedHistoryItems.unshift({
+    id: `generated-${Date.now()}`,
+    imageUrl,
+    name,
+    prompt,
+    model,
+  });
+  generatedHistoryItems = generatedHistoryItems.slice(0, 18);
+  renderGeneratedHistory();
+}
+
+function renderGeneratedHistory() {
+  generateHistory.innerHTML = '';
+  generateHistoryCount.textContent = String(generatedHistoryItems.length);
+  if (generatedHistoryItems.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'field-hint';
+    empty.textContent = 'Generated images appear here.';
+    generateHistory.appendChild(empty);
+    return;
+  }
+
+  generatedHistoryItems.forEach((item) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'history-item';
+    button.innerHTML = `
+      <img src="${item.imageUrl}" alt="" />
+      <span>
+        <strong>${item.name.replace(/\.png$/, '')}</strong>
+        <small>${item.model}</small>
+      </span>
+    `;
+    button.addEventListener('click', () => setGeneratedImage(item.imageUrl, item.name));
+    generateHistory.appendChild(button);
+  });
+}
+
+async function runGenerateSprite() {
+  generateRun.disabled = true;
+  generateRun.textContent = 'Generating...';
+  setProgress(generateProgress, 'Calling image model', true);
+
+  try {
+    const result = await generateSprite({
+      presetId: '',
+      prompt: generatePrompt.value,
+      negativeHint: generateNegative.value,
+      model: generateModel.value,
+      aspectRatio: generateAspect.value,
+      imageSize: generateSize.value,
+    });
+
+    const name = `${generatePreset.value || 'generated-sprite'}.png`;
+    setGeneratedImage(result.imageUrl, name);
+    addGeneratedHistory(result.imageUrl, name, result.prompt, result.model);
+    setProgress(generateProgress, result.content || 'Sprite generated', true);
+  } catch (err) {
+    setProgress(generateProgress, err instanceof Error ? err.message : 'Image generation failed', true);
+  } finally {
+    generateRun.disabled = false;
+    generateRun.textContent = 'Generate sprite';
+  }
+}
+
+async function loadRemoveSource(dataUrl: string, fileName: string, fileSize?: number) {
+  const file = { name: fileName, size: fileSize ?? 0 };
+  removeFileName = fileName.replace(/\.[^.]+$/, '') + '.png';
+  removeSourceUrl = dataUrl;
   removeResultUrl = null;
   removeDownload.hidden = true;
 
@@ -99,6 +351,10 @@ async function loadRemoveFile(file: File) {
   removeFileChip.hidden = false;
   removeFileChip.textContent = `${file.name} · ${dims.width}×${dims.height} · ${formatBytes(file.size)}`;
   removeRun.disabled = false;
+}
+
+async function loadRemoveFile(file: File) {
+  await loadRemoveSource(await fileToDataUrl(file), file.name, file.size);
 }
 
 setupDropzone(removeDropzone, removeFileInput, (f) => void loadRemoveFile(f));
@@ -172,6 +428,7 @@ let extractedFrames: BrowserFrame[] = [];
 let excludedFrames = new Set<number>();
 let animTimer: ReturnType<typeof setInterval> | null = null;
 let animFrameIdx = 0;
+let draggedFrameIndex: number | null = null;
 
 function setSliceBusy(busy: boolean, label = 'Slice spritesheet') {
   const btnLabel = sliceRun.querySelector('.btn-label')!;
@@ -195,6 +452,48 @@ function setFrameCollection(frames: BrowserFrame[]) {
   renderFrameGrid();
   updateFramesCount();
   startAnim();
+}
+
+function refreshFrameCollection() {
+  sliceCells = extractedFrames.map((frame) => frame.dataUrl);
+  renderFrameGrid();
+  updateFramesCount();
+  startAnim();
+}
+
+function moveFrame(fromIndex: number, toIndex: number) {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+  if (fromIndex >= extractedFrames.length || toIndex >= extractedFrames.length) return;
+
+  const ordered = extractedFrames.map((frame, index) => ({
+    frame,
+    excluded: excludedFrames.has(index),
+  }));
+  const [item] = ordered.splice(fromIndex, 1);
+  ordered.splice(toIndex, 0, item);
+
+  extractedFrames = ordered.map((item) => item.frame);
+  excludedFrames = new Set(ordered.map((item, index) => (item.excluded ? index : -1)).filter((i) => i >= 0));
+  refreshFrameCollection();
+}
+
+function duplicateFrame(index: number) {
+  const frame = extractedFrames[index];
+  if (!frame) return;
+
+  const copy = cloneFrame(frame);
+  copy.id = `${frame.id || `frame_${index + 1}`}_copy_${Date.now()}`;
+  copy.index = extractedFrames.length;
+
+  const ordered = extractedFrames.map((item, itemIndex) => ({
+    frame: item,
+    excluded: excludedFrames.has(itemIndex),
+  }));
+  ordered.splice(index + 1, 0, { frame: copy, excluded: false });
+
+  extractedFrames = ordered.map((item, itemIndex) => ({ ...item.frame, index: itemIndex }));
+  excludedFrames = new Set(ordered.map((item, itemIndex) => (item.excluded ? itemIndex : -1)).filter((i) => i >= 0));
+  refreshFrameCollection();
 }
 
 function suggestedNormalizeSize() {
@@ -300,9 +599,10 @@ async function runSlice() {
   }
 }
 
-async function loadSliceFile(file: File) {
-  sliceBaseName = file.name.replace(/\.[^.]+$/, '');
-  sliceSourceUrl = await fileToDataUrl(file);
+async function loadSliceSource(dataUrl: string, fileName: string, fileSize?: number) {
+  const file = { name: fileName, size: fileSize ?? 0 };
+  sliceBaseName = fileName.replace(/\.[^.]+$/, '');
+  sliceSourceUrl = dataUrl;
   sliceCells = [];
   originalExtractedFrames = [];
   extractedFrames = [];
@@ -329,17 +629,37 @@ async function loadSliceFile(file: File) {
   await runSlice();
 }
 
+async function loadSliceFile(file: File) {
+  await loadSliceSource(await fileToDataUrl(file), file.name, file.size);
+}
+
 setupDropzone(sliceDropzone, sliceFileInput, (f) => void loadSliceFile(f));
+void initGenerator();
+renderGeneratedHistory();
 
 function renderFrameGrid() {
   frameGrid.innerHTML = '';
-  sliceCells.forEach((url, i) => {
+  extractedFrames.forEach((frame, i) => {
     const cell = document.createElement('div');
     cell.className = 'frame-cell checker' + (excludedFrames.has(i) ? ' excluded' : '');
+    cell.draggable = true;
+    cell.dataset.index = String(i);
     cell.innerHTML = `<span class="frame-num">${i + 1}</span>`;
+
+    const duplicate = document.createElement('button');
+    duplicate.type = 'button';
+    duplicate.className = 'frame-duplicate';
+    duplicate.title = 'Duplicate frame';
+    duplicate.textContent = 'Copy';
+    duplicate.addEventListener('click', (event) => {
+      event.stopPropagation();
+      duplicateFrame(i);
+    });
+
     const img = document.createElement('img');
-    img.src = url;
+    img.src = frame.dataUrl;
     img.alt = `Frame ${i + 1}`;
+    cell.appendChild(duplicate);
     cell.appendChild(img);
     cell.addEventListener('click', () => {
       if (excludedFrames.has(i)) excludedFrames.delete(i);
@@ -348,12 +668,39 @@ function renderFrameGrid() {
       updateFramesCount();
       startAnim();
     });
+    cell.addEventListener('dragstart', (event) => {
+      draggedFrameIndex = i;
+      cell.classList.add('dragging');
+      event.dataTransfer?.setData('text/plain', String(i));
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+    });
+    cell.addEventListener('dragend', () => {
+      draggedFrameIndex = null;
+      cell.classList.remove('dragging');
+      frameGrid.querySelectorAll('.drop-target').forEach((el) => el.classList.remove('drop-target'));
+    });
+    cell.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      if (draggedFrameIndex !== null && draggedFrameIndex !== i) {
+        cell.classList.add('drop-target');
+      }
+    });
+    cell.addEventListener('dragleave', () => {
+      cell.classList.remove('drop-target');
+    });
+    cell.addEventListener('drop', (event) => {
+      event.preventDefault();
+      cell.classList.remove('drop-target');
+      const from = draggedFrameIndex ?? Number(event.dataTransfer?.getData('text/plain'));
+      moveFrame(from, i);
+      draggedFrameIndex = null;
+    });
     frameGrid.appendChild(cell);
   });
 }
 
 function activeFrameIndices(): number[] {
-  return sliceCells.map((_, i) => i).filter((i) => !excludedFrames.has(i));
+  return extractedFrames.map((_, i) => i).filter((i) => !excludedFrames.has(i));
 }
 
 function updateFramesCount() {
@@ -393,6 +740,32 @@ function startAnim() {
 
 animFps.addEventListener('input', () => startAnim());
 sliceRun.addEventListener('click', () => void runSlice());
+generatePreset.addEventListener('change', () => applyPresetDefaults(true));
+generateAspect.addEventListener('change', () => {
+  presetEditAspect.value = generateAspect.value;
+});
+generateSize.addEventListener('change', () => {
+  presetEditSize.value = generateSize.value;
+});
+presetSave.addEventListener('click', saveCurrentPreset);
+presetNew.addEventListener('click', createBlankPreset);
+presetDelete.addEventListener('click', deleteCurrentPreset);
+generateRun.addEventListener('click', () => void runGenerateSprite());
+generateUseRemove.addEventListener('click', () => {
+  if (generatedSpriteUrl) void loadRemoveSource(generatedSpriteUrl, generatedSpriteName);
+});
+generateUseSlice.addEventListener('click', () => {
+  if (generatedSpriteUrl) void loadSliceSource(generatedSpriteUrl, generatedSpriteName);
+});
+generateDownload.addEventListener('click', () => {
+  if (generatedSpriteUrl) downloadDataUrl(generatedSpriteUrl, generatedSpriteName);
+});
+generateClear.addEventListener('click', clearGeneratedImage);
+generateClearHistory.addEventListener('click', () => {
+  generatedHistoryItems = [];
+  renderGeneratedHistory();
+  clearGeneratedImage();
+});
 normalizeMode.addEventListener('change', refreshNormalizeInputs);
 normalizePadding.addEventListener('input', refreshNormalizeInputs);
 normalizeApply.addEventListener('click', () => void applyNormalization());

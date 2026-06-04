@@ -51,6 +51,37 @@ npm run dev
 
 Open the local URL printed by Vite (e.g. **http://localhost:5173**).
 
+### Sprite generation backend
+
+Sprite generation uses a Go proxy so the OpenRouter API key never ships to the browser.
+
+```bash
+cp .env.example .env
+# set OPENROUTER_API_KEY in .env, or export it in your shell
+npm run dev:api
+```
+
+In another terminal:
+
+```bash
+npm run dev
+```
+
+Vite proxies `/api/*` to the Go server at `http://127.0.0.1:8787`.
+
+For production, build the frontend and run the Go server:
+
+```bash
+npm run build
+npm run build:api
+./bin/sprite-lab-server
+```
+
+Security notes:
+- Keep `OPENROUTER_API_KEY` only in environment variables or `.env`.
+- Do not expose the key in frontend code.
+- The Go server validates presets, models, aspect ratios, image sizes, request size, and applies a per-IP rate limit.
+
 ### Production build
 
 ```bash
