@@ -10,8 +10,10 @@ import { removeBackgroundSmart } from './backgroundDetect';
 import {
   runSpritesheetPipelineBrowser,
   formatFrameDetection,
+  normalizeBrowserFrames,
+  type BrowserFrame,
 } from './pipelineBrowser';
-import type { ExtractedFrame } from './frameExtract';
+import type { NormalizeAlign, NormalizeMode } from './core/types';
 
 type Tab = 'remove' | 'slice';
 
@@ -144,6 +146,15 @@ const detectDetail = document.getElementById('detect-detail')!;
 const sliceRun = document.getElementById('slice-run') as HTMLButtonElement;
 const sliceProgress = document.getElementById('slice-progress')!;
 const sliceZip = document.getElementById('slice-zip') as HTMLButtonElement;
+const normalizeCard = document.getElementById('normalize-card')!;
+const normalizeStatus = document.getElementById('normalize-status')!;
+const normalizeMode = document.getElementById('normalize-mode') as HTMLSelectElement;
+const normalizeWidth = document.getElementById('normalize-width') as HTMLInputElement;
+const normalizeHeight = document.getElementById('normalize-height') as HTMLInputElement;
+const normalizeAlign = document.getElementById('normalize-align') as HTMLSelectElement;
+const normalizePadding = document.getElementById('normalize-padding') as HTMLInputElement;
+const normalizeApply = document.getElementById('normalize-apply') as HTMLButtonElement;
+const normalizeReset = document.getElementById('normalize-reset') as HTMLButtonElement;
 const sheetImg = document.getElementById('sheet-img') as HTMLImageElement;
 const sheetEmpty = document.getElementById('sheet-empty')!;
 const framesSection = document.getElementById('frames-section')!;
@@ -156,7 +167,8 @@ const fpsVal = document.getElementById('fps-val')!;
 let sliceSourceUrl: string | null = null;
 let sliceBaseName = 'spritesheet';
 let sliceCells: string[] = [];
-let extractedFrames: ExtractedFrame[] = [];
+let originalExtractedFrames: BrowserFrame[] = [];
+let extractedFrames: BrowserFrame[] = [];
 let excludedFrames = new Set<number>();
 let animTimer: ReturnType<typeof setInterval> | null = null;
 let animFrameIdx = 0;
@@ -167,6 +179,85 @@ function setSliceBusy(busy: boolean, label = 'Slice spritesheet') {
   sliceRun.disabled = busy;
   btnLabel.textContent = busy ? 'Slicing…' : label;
   spinner.hidden = !busy;
+}
+
+function cloneFrame(frame: BrowserFrame): BrowserFrame {
+  return {
+    ...frame,
+    pivot: { ...frame.pivot },
+    boxes: frame.boxes.map((box) => ({ ...box })),
+  };
+}
+
+function setFrameCollection(frames: BrowserFrame[]) {
+  extractedFrames = frames.map(cloneFrame);
+  sliceCells = extractedFrames.map((frame) => frame.dataUrl);
+  renderFrameGrid();
+  updateFramesCount();
+  startAnim();
+}
+
+function suggestedNormalizeSize() {
+  const padding = Math.max(0, Number(normalizePadding.value) || 0);
+  const maxWidth = originalExtractedFrames.length
+    ? Math.max(...originalExtractedFrames.map((frame) => frame.width))
+    : 1;
+  const maxHeight = originalExtractedFrames.length
+    ? Math.max(...originalExtractedFrames.map((frame) => frame.height))
+    : 1;
+  return {
+    width: maxWidth + padding * 2,
+    height: maxHeight + padding * 2,
+  };
+}
+
+function refreshNormalizeInputs() {
+  const size = suggestedNormalizeSize();
+  if (normalizeMode.value === 'max-size') {
+    normalizeWidth.value = String(size.width);
+    normalizeHeight.value = String(size.height);
+    normalizeWidth.disabled = true;
+    normalizeHeight.disabled = true;
+    return;
+  }
+  normalizeWidth.disabled = false;
+  normalizeHeight.disabled = false;
+  if (!normalizeWidth.value) normalizeWidth.value = String(size.width);
+  if (!normalizeHeight.value) normalizeHeight.value = String(size.height);
+}
+
+function resetNormalizeControls() {
+  normalizeMode.value = 'max-size';
+  normalizeAlign.value = 'bottom-center';
+  normalizePadding.value = '0';
+  refreshNormalizeInputs();
+  normalizeStatus.textContent = 'Original crop';
+}
+
+async function applyNormalization() {
+  if (originalExtractedFrames.length === 0) return;
+
+  refreshNormalizeInputs();
+  normalizeApply.disabled = true;
+  normalizeApply.textContent = 'Normalizing...';
+
+  try {
+    const normalized = await normalizeBrowserFrames(originalExtractedFrames, {
+      mode: normalizeMode.value as NormalizeMode,
+      width: Number(normalizeWidth.value) || undefined,
+      height: Number(normalizeHeight.value) || undefined,
+      align: normalizeAlign.value as NormalizeAlign,
+      padding: Math.max(0, Number(normalizePadding.value) || 0),
+    });
+    excludedFrames.clear();
+    setFrameCollection(normalized);
+    normalizeStatus.textContent = `${normalized[0]?.width ?? 0}x${normalized[0]?.height ?? 0}`;
+  } catch (err) {
+    alert(err instanceof Error ? err.message : 'Normalization failed');
+  } finally {
+    normalizeApply.disabled = false;
+    normalizeApply.textContent = 'Apply normalization';
+  }
 }
 
 async function runSlice() {
@@ -185,16 +276,8 @@ async function runSlice() {
       else sheetImg.onload = () => resolve();
     });
 
-    extractedFrames = frames.map((f) => ({
-      dataUrl: f.dataUrl,
-      x: f.x,
-      y: f.y,
-      width: f.width,
-      height: f.height,
-    }));
-
-    sliceCells = extractedFrames.map((f) => f.dataUrl);
-    detectLabel.textContent = formatFrameDetection(extractedFrames.length);
+    originalExtractedFrames = frames.map(cloneFrame);
+    detectLabel.textContent = formatFrameDetection(frames.length);
     const removed =
       applied.kind !== 'none' && applied.kind !== 'transparent' ? `${applied.label} removed` : '';
     detectDetail.textContent = removed
@@ -203,9 +286,9 @@ async function runSlice() {
 
     excludedFrames.clear();
     framesSection.hidden = false;
-    renderFrameGrid();
-    updateFramesCount();
-    startAnim();
+    normalizeCard.hidden = false;
+    resetNormalizeControls();
+    setFrameCollection(originalExtractedFrames);
     sliceZip.hidden = false;
     setProgress(sliceProgress, '', false);
     setSliceBusy(false, 'Slice again');
@@ -221,10 +304,13 @@ async function loadSliceFile(file: File) {
   sliceBaseName = file.name.replace(/\.[^.]+$/, '');
   sliceSourceUrl = await fileToDataUrl(file);
   sliceCells = [];
+  originalExtractedFrames = [];
   extractedFrames = [];
   excludedFrames.clear();
   sliceZip.hidden = true;
   framesSection.hidden = true;
+  normalizeCard.hidden = true;
+  resetNormalizeControls();
   stopAnim();
 
   sheetImg.src = sliceSourceUrl;
@@ -307,6 +393,15 @@ function startAnim() {
 
 animFps.addEventListener('input', () => startAnim());
 sliceRun.addEventListener('click', () => void runSlice());
+normalizeMode.addEventListener('change', refreshNormalizeInputs);
+normalizePadding.addEventListener('input', refreshNormalizeInputs);
+normalizeApply.addEventListener('click', () => void applyNormalization());
+normalizeReset.addEventListener('click', () => {
+  if (originalExtractedFrames.length === 0) return;
+  excludedFrames.clear();
+  resetNormalizeControls();
+  setFrameCollection(originalExtractedFrames);
+});
 
 sliceZip.addEventListener('click', async () => {
   const active = activeFrameIndices();

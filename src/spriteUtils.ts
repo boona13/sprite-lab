@@ -28,7 +28,9 @@ export function buildFrameManifest(frames: ExtractedFrame[], fps = 12) {
   let stripX = 0;
 
   return {
-    version: 1,
+    version: 2,
+    name: 'spritesheet',
+    image: 'strip.png',
     frameCount: frames.length,
     fps,
     loop: true,
@@ -37,19 +39,45 @@ export function buildFrameManifest(frames: ExtractedFrame[], fps = 12) {
       sheetWidth: stripW,
       sheetHeight: maxH,
     },
+    animations: {
+      default: {
+        frames: frames.map((f, index) => f.id ?? `frame_${String(index + 1).padStart(3, '0')}`),
+        fps,
+        loop: true,
+      },
+    },
     frames: frames.map((f, index) => {
+      const id = f.id ?? `frame_${String(index + 1).padStart(3, '0')}`;
+      const sourceX = f.sourceX ?? f.x;
+      const sourceY = f.sourceY ?? f.y;
+      const pivot = f.pivot ?? { x: 0.5, y: 1, mode: 'bottom-center' as const };
       const entry = {
+        id,
         index,
         fileName: `frame_${String(index + 1).padStart(2, '0')}.png`,
         width: f.width,
         height: f.height,
-        sourceX: f.x,
-        sourceY: f.y,
+        trimmedWidth: f.trimmedWidth ?? f.width,
+        trimmedHeight: f.trimmedHeight ?? f.height,
+        originalWidth: f.originalWidth ?? f.width,
+        originalHeight: f.originalHeight ?? f.height,
+        sourceX,
+        sourceY,
         stripX,
+        pivot: {
+          ...pivot,
+          pixelX: Math.round(pivot.x * f.width),
+          pixelY: Math.round(pivot.y * f.height),
+        },
+        boxes: f.boxes ?? [],
       };
       stripX += f.width;
       return entry;
     }),
+    meta: {
+      app: 'Sprite Lab',
+      format: 'generic-json',
+    },
   };
 }
 

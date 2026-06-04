@@ -236,6 +236,10 @@ body::before {
   gap: 8px;
 }
 
+.grid-inputs.two-col {
+  grid-template-columns: 1fr 1fr;
+}
+
 .grid-inputs label {
   display: flex;
   flex-direction: column;
@@ -249,6 +253,54 @@ body::before {
   width: 100%;
   padding: 8px;
   background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.settings-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.settings-title strong {
+  font-size: 13px;
+}
+
+.settings-title span {
+  font-size: 10px;
+  color: var(--accent);
+  font-family: var(--mono);
+}
+
+.select-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.select-field select,
+.select-field input {
+  width: 100%;
+  padding: 8px;
+  background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -410,6 +462,24 @@ input[type='range'] { width: 100%; accent-color: var(--accent); }
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
+}
+
+.btn-ghost {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-ghost:hover {
+  color: var(--text);
+  border-color: var(--border);
 }
 
 /* ── Checker transparency ── */

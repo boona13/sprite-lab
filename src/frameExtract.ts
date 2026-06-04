@@ -2,11 +2,32 @@ import { loadImage } from './imageProcessor';
 import { defringeImage } from './edgeCleanup';
 
 export interface ExtractedFrame {
+  id?: string;
+  index?: number;
   dataUrl: string;
   x: number;
   y: number;
+  sourceX?: number;
+  sourceY?: number;
   width: number;
   height: number;
+  trimmedWidth?: number;
+  trimmedHeight?: number;
+  originalWidth?: number;
+  originalHeight?: number;
+  pivot?: {
+    x: number;
+    y: number;
+    mode: 'center' | 'bottom-center' | 'top-left' | 'custom';
+  };
+  boxes?: {
+    id: string;
+    type: 'collision' | 'hurtbox' | 'hitbox' | 'pickup';
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }[];
 }
 
 /** Raw sheet: transparent or strong magenta only — matches Echo Jump `extractMagentaSections`. */

@@ -88,6 +88,39 @@
             </div>
           </div>
 
+          <section class="settings-card" id="normalize-card" hidden>
+            <div class="settings-title">
+              <strong>Normalize frames</strong>
+              <span id="normalize-status">Original crop</span>
+            </div>
+            <label class="select-field">
+              Size
+              <select id="normalize-mode">
+                <option value="max-size">Largest frame</option>
+                <option value="custom-size">Custom canvas</option>
+              </select>
+            </label>
+            <div class="grid-inputs two-col">
+              <label>Width <input type="number" id="normalize-width" min="1" step="1" /></label>
+              <label>Height <input type="number" id="normalize-height" min="1" step="1" /></label>
+            </div>
+            <label class="select-field">
+              Align
+              <select id="normalize-align">
+                <option value="bottom-center">Bottom center</option>
+                <option value="center">Center</option>
+                <option value="top-left">Top left</option>
+                <option value="pivot">Pivot</option>
+              </select>
+            </label>
+            <label class="select-field">
+              Padding
+              <input type="number" id="normalize-padding" min="0" step="1" value="0" />
+            </label>
+            <button type="button" class="btn-secondary" id="normalize-apply">Apply normalization</button>
+            <button type="button" class="btn-ghost" id="normalize-reset">Reset crops</button>
+          </section>
+
           <section class="controls">
             <p class="progress-line hidden" id="slice-progress" aria-live="polite"></p>
 

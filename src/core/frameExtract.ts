@@ -85,13 +85,17 @@ function sortBoxes(boxes: { minX: number; minY: number; maxX: number; maxY: numb
   );
 }
 
+function frameId(index: number): string {
+  return `frame_${String(index + 1).padStart(3, '0')}`;
+}
+
 function cropRgba(
   source: RgbaImage,
   boxes: { minX: number; minY: number; maxX: number; maxY: number }[],
   pad: number,
 ): ExtractedFrame[] {
   const { width: w, height: h } = source;
-  return boxes.map((bx) => {
+  return boxes.map((bx, index) => {
     const x = Math.max(0, bx.minX - pad);
     const y = Math.max(0, bx.minY - pad);
     const right = Math.min(w - 1, bx.maxX + pad);
@@ -109,7 +113,23 @@ function cropRgba(
 
     const frame: RgbaImage = { data, width: cw, height: ch };
     defringeInPlace(frame.data, cw, ch, 2);
-    return { image: frame, x, y, width: cw, height: ch };
+    return {
+      id: frameId(index),
+      index,
+      image: frame,
+      x,
+      y,
+      sourceX: x,
+      sourceY: y,
+      width: cw,
+      height: ch,
+      trimmedWidth: cw,
+      trimmedHeight: ch,
+      originalWidth: cw,
+      originalHeight: ch,
+      pivot: { x: 0.5, y: 1, mode: 'bottom-center' },
+      boxes: [],
+    };
   });
 }
 
