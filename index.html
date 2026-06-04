@@ -25,6 +25,22 @@
           <button type="button" class="tab" data-tab="slice" role="tab" aria-selected="false">Slice spritesheet</button>
           <button type="button" class="tab" data-tab="generate" role="tab" aria-selected="false">Generate sprites</button>
         </nav>
+        <section class="account-panel">
+          <div class="auth-form" id="auth-form">
+            <input type="text" id="auth-name" placeholder="Name" />
+            <input type="email" id="auth-email" placeholder="Email" />
+            <input type="password" id="auth-password" placeholder="Password" />
+            <button type="button" class="mini-btn" id="auth-login">Login</button>
+            <button type="button" class="mini-btn ghost" id="auth-register">Register</button>
+          </div>
+          <div class="project-form hidden" id="project-form">
+            <span id="current-user"></span>
+            <select id="project-select"></select>
+            <input type="text" id="project-name" placeholder="New project" />
+            <button type="button" class="mini-btn" id="project-create">Create</button>
+            <button type="button" class="mini-btn ghost" id="auth-logout">Logout</button>
+          </div>
+        </section>
       </header>
 
       <!-- ── Background Remove ── -->
@@ -146,6 +162,7 @@
             <button type="button" class="btn-secondary" id="generate-use-remove">Send to background remover</button>
             <button type="button" class="btn-secondary" id="generate-use-slice">Send to slicer</button>
             <button type="button" class="btn-secondary" id="generate-download">Download PNG</button>
+            <button type="button" class="btn-secondary" id="generate-save-project">Save to project</button>
             <button type="button" class="btn-ghost" id="generate-clear">Clear open image</button>
           </div>
         </section>

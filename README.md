@@ -81,6 +81,8 @@ Security notes:
 - Keep `OPENROUTER_API_KEY` only in environment variables or `.env`.
 - Do not expose the key in frontend code.
 - The Go server validates presets, models, aspect ratios, image sizes, request size, and applies a per-IP rate limit.
+- User accounts, sessions, projects, and project images are stored in SQLite via `SPRITE_LAB_DB_PATH`.
+- Image generation and project APIs require an authenticated session cookie.
 
 ### Production build
 

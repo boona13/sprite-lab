@@ -3,6 +3,9 @@ dist/
 bin/
 .DS_Store
 *.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 .env
 .env.*
 !.env.example

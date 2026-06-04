@@ -14,6 +14,18 @@ import {
   type SpritePreset,
 } from './generateSprites';
 import {
+  addProjectImage,
+  createProject,
+  fetchMe,
+  listProjectImages,
+  listProjects,
+  login,
+  logout,
+  register,
+  type CurrentUser,
+  type Project,
+} from './projectApi';
+import {
   runSpritesheetPipelineBrowser,
   formatFrameDetection,
   normalizeBrowserFrames,
@@ -91,6 +103,90 @@ function setProgress(el: HTMLElement, message: string, show: boolean) {
   el.classList.toggle('hidden', !show);
 }
 
+// ACCESS CONTROL + PROJECTS
+const authForm = document.getElementById('auth-form')!;
+const authName = document.getElementById('auth-name') as HTMLInputElement;
+const authEmail = document.getElementById('auth-email') as HTMLInputElement;
+const authPassword = document.getElementById('auth-password') as HTMLInputElement;
+const authLogin = document.getElementById('auth-login') as HTMLButtonElement;
+const authRegister = document.getElementById('auth-register') as HTMLButtonElement;
+const authLogout = document.getElementById('auth-logout') as HTMLButtonElement;
+const projectForm = document.getElementById('project-form')!;
+const currentUserLabel = document.getElementById('current-user')!;
+const projectSelect = document.getElementById('project-select') as HTMLSelectElement;
+const projectName = document.getElementById('project-name') as HTMLInputElement;
+const projectCreate = document.getElementById('project-create') as HTMLButtonElement;
+
+let currentUser: CurrentUser | null = null;
+let currentProjects: Project[] = [];
+let activeProjectId: number | null = null;
+
+function renderAccessState() {
+  authForm.classList.toggle('hidden', !!currentUser);
+  projectForm.classList.toggle('hidden', !currentUser);
+  currentUserLabel.textContent = currentUser ? currentUser.name : '';
+  if (!currentUser) setProgress(generateProgress, 'Login required to generate and save project images', true);
+  updateGenerateAvailability();
+}
+
+function updateGenerateAvailability() {
+  const canGenerate = !!currentUser && !!activeProjectId;
+  generateRun.disabled = !canGenerate;
+  generateSaveProject.disabled = !canGenerate;
+  if (currentUser && !activeProjectId) {
+    setProgress(generateProgress, 'Create or select a project before generating sprites', true);
+  }
+}
+
+function renderProjectSelect() {
+  projectSelect.innerHTML = '';
+  currentProjects.forEach((project) => {
+    const option = document.createElement('option');
+    option.value = String(project.id);
+    option.textContent = project.name;
+    projectSelect.appendChild(option);
+  });
+  if (activeProjectId && currentProjects.some((project) => project.id === activeProjectId)) {
+    projectSelect.value = String(activeProjectId);
+  } else if (currentProjects[0]) {
+    activeProjectId = currentProjects[0].id;
+    projectSelect.value = String(activeProjectId);
+  } else {
+    activeProjectId = null;
+  }
+  updateGenerateAvailability();
+}
+
+async function refreshProjects() {
+  if (!currentUser) return;
+  currentProjects = await listProjects();
+  renderProjectSelect();
+  await loadActiveProjectImages();
+}
+
+async function loadActiveProjectImages() {
+  if (!activeProjectId) {
+    generatedHistoryItems = [];
+    renderGeneratedHistory();
+    return;
+  }
+  const images = await listProjectImages(activeProjectId);
+  generatedHistoryItems = images.map((image) => ({
+    id: `project-image-${image.id}`,
+    imageUrl: image.imageData,
+    name: image.name,
+    prompt: image.prompt || '',
+    model: image.model || image.kind,
+  }));
+  renderGeneratedHistory();
+}
+
+async function initAccess() {
+  currentUser = await fetchMe();
+  renderAccessState();
+  if (currentUser) await refreshProjects();
+}
+
 // GENERATE SPRITES
 const generatePreset = document.getElementById('generate-preset') as HTMLSelectElement;
 const generatePrompt = document.getElementById('generate-prompt') as HTMLTextAreaElement;
@@ -106,6 +202,7 @@ const generateActions = document.getElementById('generate-actions')!;
 const generateUseRemove = document.getElementById('generate-use-remove') as HTMLButtonElement;
 const generateUseSlice = document.getElementById('generate-use-slice') as HTMLButtonElement;
 const generateDownload = document.getElementById('generate-download') as HTMLButtonElement;
+const generateSaveProject = document.getElementById('generate-save-project') as HTMLButtonElement;
 const generateClear = document.getElementById('generate-clear') as HTMLButtonElement;
 const generateHistory = document.getElementById('generate-history')!;
 const generateHistoryCount = document.getElementById('generate-history-count')!;
@@ -308,6 +405,10 @@ function renderGeneratedHistory() {
 }
 
 async function runGenerateSprite() {
+  if (!activeProjectId) {
+    alert('Create or select a project first.');
+    return;
+  }
   generateRun.disabled = true;
   generateRun.textContent = 'Generating...';
   setProgress(generateProgress, 'Calling image model', true);
@@ -320,11 +421,13 @@ async function runGenerateSprite() {
       model: generateModel.value,
       aspectRatio: generateAspect.value,
       imageSize: generateSize.value,
+      projectId: activeProjectId ?? undefined,
     });
 
     const name = `${generatePreset.value || 'generated-sprite'}.png`;
     setGeneratedImage(result.imageUrl, name);
     addGeneratedHistory(result.imageUrl, name, result.prompt, result.model);
+    if (result.stored && activeProjectId) await loadActiveProjectImages();
     setProgress(generateProgress, result.content || 'Sprite generated', true);
   } catch (err) {
     setProgress(generateProgress, err instanceof Error ? err.message : 'Image generation failed', true);
@@ -635,6 +738,7 @@ async function loadSliceFile(file: File) {
 
 setupDropzone(sliceDropzone, sliceFileInput, (f) => void loadSliceFile(f));
 void initGenerator();
+void initAccess();
 renderGeneratedHistory();
 
 function renderFrameGrid() {
@@ -760,11 +864,64 @@ generateUseSlice.addEventListener('click', () => {
 generateDownload.addEventListener('click', () => {
   if (generatedSpriteUrl) downloadDataUrl(generatedSpriteUrl, generatedSpriteName);
 });
+generateSaveProject.addEventListener('click', async () => {
+  if (!generatedSpriteUrl || !activeProjectId) {
+    alert('Select or create a project first.');
+    return;
+  }
+  await addProjectImage(activeProjectId, {
+    kind: 'attached',
+    name: generatedSpriteName,
+    prompt: generatePrompt.value,
+    model: generateModel.value,
+    imageData: generatedSpriteUrl,
+  });
+  await loadActiveProjectImages();
+});
 generateClear.addEventListener('click', clearGeneratedImage);
 generateClearHistory.addEventListener('click', () => {
   generatedHistoryItems = [];
   renderGeneratedHistory();
   clearGeneratedImage();
+});
+authLogin.addEventListener('click', async () => {
+  try {
+    currentUser = await login(authEmail.value, authPassword.value);
+    renderAccessState();
+    await refreshProjects();
+  } catch (err) {
+    alert(err instanceof Error ? err.message : 'Login failed');
+  }
+});
+authRegister.addEventListener('click', async () => {
+  try {
+    currentUser = await register(authEmail.value, authName.value || authEmail.value, authPassword.value);
+    renderAccessState();
+    await refreshProjects();
+  } catch (err) {
+    alert(err instanceof Error ? err.message : 'Registration failed');
+  }
+});
+authLogout.addEventListener('click', async () => {
+  await logout();
+  currentUser = null;
+  currentProjects = [];
+  activeProjectId = null;
+  generatedHistoryItems = [];
+  clearGeneratedImage();
+  renderGeneratedHistory();
+  renderAccessState();
+});
+projectCreate.addEventListener('click', async () => {
+  if (!projectName.value.trim()) return;
+  const project = await createProject(projectName.value);
+  projectName.value = '';
+  activeProjectId = project.id;
+  await refreshProjects();
+});
+projectSelect.addEventListener('change', async () => {
+  activeProjectId = Number(projectSelect.value) || null;
+  await loadActiveProjectImages();
 });
 normalizeMode.addEventListener('change', refreshNormalizeInputs);
 normalizePadding.addEventListener('input', refreshNormalizeInputs);

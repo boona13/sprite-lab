@@ -14,6 +14,7 @@ export interface GenerateOptions {
   aspectRatio: string;
   imageSize: string;
   negativeHint: string;
+  projectId?: number;
 }
 
 export interface GenerateResult {
@@ -21,6 +22,13 @@ export interface GenerateResult {
   model: string;
   prompt: string;
   content?: string;
+  stored?: {
+    id: number;
+    projectId: number;
+    name: string;
+    imageData: string;
+    createdAt: string;
+  };
 }
 
 export interface GenerateMetadata {

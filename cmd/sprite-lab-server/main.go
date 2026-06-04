@@ -11,6 +11,7 @@ import (
 
 	"github.com/ggampp/sprite-lab/internal/generate"
 	"github.com/ggampp/sprite-lab/internal/server"
+	"github.com/ggampp/sprite-lab/internal/store"
 )
 
 func main() {
@@ -27,11 +28,19 @@ func main() {
 		AppTitle:      envOr("SPRITE_LAB_APP_TITLE", "Sprite Lab"),
 	})
 
+	db, err := store.Open(ctx, envOr("SPRITE_LAB_DB_PATH", "sprite-lab.sqlite"))
+	if err != nil {
+		slog.Error("could not open database", "error", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
 	app := server.New(server.Config{
 		Addr:          envOr("SPRITE_LAB_ADDR", ":8787"),
 		StaticDir:     envOr("SPRITE_LAB_STATIC_DIR", "dist"),
 		AllowedOrigin: os.Getenv("SPRITE_LAB_ALLOWED_ORIGIN"),
-	}, generator)
+		CookieSecure:  envOr("SPRITE_LAB_COOKIE_SECURE", "false") == "true",
+	}, generator, db)
 
 	slog.Info("starting sprite lab server", "addr", envOr("SPRITE_LAB_ADDR", ":8787"))
 	if err := app.ListenAndServe(ctx); err != nil {
